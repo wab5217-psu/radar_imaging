@@ -2,7 +2,7 @@ DEBUG=0
 
 
 ifeq (1, ${DEBUG})
-	CFLAGS=-L /usr/local/lib -I$(RSTPATH)/include/base -I$(RSTPATH)/include/superdarn -I$(RSTPATH)/include/general -I$(RSTPATH)/include/analysis -L$(RSTPATH)/lib -L/opt/intel -L/usr/local/lib -L/Users/bristow/lib -O3 -ipo -g \
+	CFLAGS=-L /usr/local/lib -I$(RSTPATH)/include/base -I$(RSTPATH)/include/superdarn -I$(RSTPATH)/include/general -I$(RSTPATH)/include/analysis -L$(RSTPATH)/lib -L/opt/intel -L/usr/local/lib -O3 -ipo -g \
 	$(info ********DEBUG*********)
 else
 
