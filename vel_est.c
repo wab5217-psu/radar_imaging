@@ -180,7 +180,8 @@ int main(int argc, char *argv[]){
 
   int nant=MAIN_ANT;
   double asep;
-
+  int cd_offset=(int)(dstr.nbaud/2);
+  
   if( dstr.nbaud>1 ){
     fprintf(stderr,"coded:\n");
     for( jl=0; jl<dstr.nbaud; jl++ )fprintf(stderr," %d ",dstr.pcode[jl]);
@@ -188,31 +189,70 @@ int main(int argc, char *argv[]){
     double *decoded;
     decoded=(double *)calloc(sizeof(double),dstr.samples);
     for( seq=0; seq<nseq; seq++ )for( jant=0; jant<nant; jant++){
-      for( j=dstr.nbaud/2; j<dstr.samples-dstr.nbaud; j++ ){
-  	decoded[j]=0.;
-  	for( jl=0; jl<dstr.nbaud; jl++ ){
-	  if(dstr.i_array[jant][seq][j+jl-dstr.nbaud/2]==BAD_VALUE) continue;	  
-	  decoded[j]+=dstr.i_array[jant][seq][j+jl-dstr.nbaud/2]*dstr.pcode[jl];
+	for( j=cd_offset; j<dstr.samples-dstr.nbaud; j++ ){
+	decoded[j]=0.;
+	for( jl=0; jl<dstr.nbaud; jl++ ){
+	  if(dstr.i_array[jant][seq][j+jl-cd_offset]==BAD_VALUE) continue;
+	  decoded[j] += dstr.i_array[jant][seq][j+jl-cd_offset]*(double)dstr.pcode[jl];
 	}
       }
-      for( j=dstr.nbaud/2; j<dstr.samples-dstr.nbaud/2; j++ )
-  	/* dstr.i_array[jant][seq][j]=decoded[j]; */
-  	dstr.i_array[jant][seq][j]=decoded[j]/(double)dstr.nbaud;
+      for( j=cd_offset; j<dstr.samples-dstr.nbaud; j++ )
+	dstr.i_array[jant][seq][j]=decoded[j]/(double)dstr.nbaud;
 
-      for( j=dstr.nbaud/2; j<dstr.samples-dstr.nbaud; j++ ){
-  	decoded[j]=0.;
-  	for( jl=0; jl<dstr.nbaud; jl++ ){
-	  if(dstr.q_array[jant][seq][j+jl-dstr.nbaud/2]==BAD_VALUE) continue;	  
-	  decoded[j]+=dstr.q_array[jant][seq][j+jl-dstr.nbaud/2]*dstr.pcode[jl];
+      for( j=cd_offset; j<dstr.samples-dstr.nbaud; j++ ){
+	decoded[j]=0.;
+	for( jl=0; jl<dstr.nbaud; jl++ ){
+	  if(dstr.q_array[jant][seq][j+jl-cd_offset]==BAD_VALUE) continue;
+	  decoded[j] += dstr.q_array[jant][seq][j+jl-cd_offset]*(double)dstr.pcode[jl];
 	}
       }
-      for( j=dstr.nbaud/2; j<dstr.samples-dstr.nbaud/2; j++ )
-  	/* dstr.q_array[jant][seq][j]=decoded[j]; */
-  	dstr.q_array[jant][seq][j]=decoded[j]/(double)dstr.nbaud;
+      for( j=cd_offset; j<dstr.samples-dstr.nbaud; j++ )
+	dstr.q_array[jant][seq][j]=decoded[j]/(double)dstr.nbaud;
     }
     free(decoded);
   }
 
+  double samp1,samp2;
+  int jsamp,nsamp=dstr.samples;  
+  int n_nsamp=15*dstr.nbaud;
+  int ncount;
+  double nPow,ant_nPow[N_ANT];
+  double norm_v;
+  
+  for( jant=0; jant<N_ANT; jant++ ){
+    ncount=0;
+    nPow=0;
+    for( seq=0; seq<dstr.sequences; seq++ ){
+      for( jsamp=nsamp-n_nsamp; jsamp<nsamp; jsamp++){
+	samp1=(double)dstr.i_array[jant][seq][jsamp];
+	samp2=(double)dstr.q_array[jant][seq][jsamp];
+	if( isgood(samp1) && isgood(samp2)){
+	  nPow += samp1*samp1+samp2*samp2;
+	  ncount+=1;
+	}
+      }
+    }
+    ant_nPow[jant]=nPow/(double)ncount;
+  }
+  
+  
+  for( jant=0; jant<N_ANT; jant++ ){
+    if( isgood(ant_nPow[jant])){norm_v=sqrt(ant_nPow[jant]);}else{norm_v=100000;}
+    fprintf(stderr,"normalizaiton %f\n",norm_v);
+    for( seq=0; seq<dstr.sequences; seq++ )for( j=0; j<dstr.samples; j++ ){
+	if( dstr.i_array[jant][seq][j] == BAD_VALUE ) continue;
+	if( dstr.q_array[jant][seq][j] == BAD_VALUE ) continue;
+	if( norm_v == 0 ){
+	  dstr.i_array[jant][seq][j]=BAD_VALUE;
+	  dstr.q_array[jant][seq][j]=BAD_VALUE;
+	  continue;
+	}
+	dstr.i_array[jant][seq][j]/=norm_v;
+	dstr.q_array[jant][seq][j]/=norm_v;
+	/* fprintf(stderr,"rd_image [%d][%d][%d] i = %f  q = %f\n",ja,seq,j,dstr.i_array[jant][seq][j],dstr.q_array[jant][seq][j]);  */
+      }
+  }
+    
   
   if( strcmp(radar,"kod")==0 ){
     asep=15.24;
@@ -233,8 +273,6 @@ int main(int argc, char *argv[]){
   
 
   long start_time=(long)((double)dstr.year*1.e8+(double)dstr.month*1.e6+(double)dstr.day*1.e4+(double)dstr.hour*100+dstr.minut);
-  fprintf(stderr,"start time: %ld\n",start_time);
-
 
   double dang=DANG;
   double ang_min=ANG_MIN;
@@ -357,8 +395,41 @@ int main(int argc, char *argv[]){
 
   stat=calculate_bm_matrix(ang_min, ang_max, dang, asep, k_r, bm_mat);
   int print=0;
+  int n_noise_gates=5*dstr.nbaud;
+  double noise_pwr=0;
+  glags=0;    
+
+
+  /* Assume nothing but noise in last n_noise_gates.
+     Use lag 1 power as a measure of the noise power.
+     Use the noise power when writing out the amplitudes to use sqrt(SNR) as unit.
+   */
+  
+  jl=1;
+  for( jr=dstr.nrang-n_noise_gates; jr<dstr.nrang; jr++ ){
+    for( jang=0; jang<nangs; jang++ ){
+      lags_v_ang[jl][jang].real=BAD_VALUE;
+      lags_v_ang[jl][jang].imag=BAD_VALUE;
+    }
     
-  for( jr=0; jr<dstr.nrang-4; jr++ ){
+    stat=corr_lag_mtx(&dstr,jl,jr,&corm);
+    if( stat==-1 ) continue;
+      
+    stat= corr_to_lag_v_ang( corm, nangs, jl, lags_v_ang, print, bm_mat);      
+    
+    for( jang=0; jang<nangs; jang++ ){       	
+      if( isgood(lags_v_ang[jl][jang].real) == 1 ){
+	noise_pwr += lags_v_ang[jl][jang].real*lags_v_ang[jl][jang].real + lags_v_ang[jl][jang].imag*lags_v_ang[jl][jang].imag;
+	glags++;
+      }
+    }
+  }
+  
+  noise_pwr /= (double)glags;
+  noise_pwr = sqrt(noise_pwr);
+  fprintf(stderr,"NOISE POWER %lf\n",noise_pwr);
+    
+  for( jr=0; jr<dstr.nrang-n_noise_gates; jr++ ){
     if(printinfo)fprintf(fp_info,"range %d\n",jr);
     print=0;
     
@@ -372,9 +443,9 @@ int main(int argc, char *argv[]){
 	lags_v_ang[jl][jang].imag=BAD_VALUE;
       }
       
-      stat=corr_lag_mtx(&dstr,jl,jr+4,&corm);
+      stat=corr_lag_mtx(&dstr,jl,jr+4,&corm); // calculate correlation matrix
 
-      stat=x_corr_lag_mtx(&dstr,jl,jr+4,&x_corm);
+      stat=x_corr_lag_mtx(&dstr,jl,jr+4,&x_corm); // calculate cross correlation .... not yet used
 
       
       ssi=0;
@@ -402,7 +473,7 @@ int main(int argc, char *argv[]){
 	    }
       }
       if( jr==20)print=1;
-      stat= corr_to_lag_v_ang( corm, nangs, jl, lags_v_ang, print, bm_mat);      
+      stat= corr_to_lag_v_ang( corm, nangs, jl, lags_v_ang, print, bm_mat);      // convert correlation matrix to lag versus angle
       print=0;
     }
 
@@ -422,13 +493,12 @@ int main(int argc, char *argv[]){
     }
     
     if( VERBOSE ) fprintf(stderr,"range: %d ",jr);
-    stat=select_data(lags_v_ang,nlags,nangs,selections);
+    stat=select_data(lags_v_ang,nlags,nangs,selections); // select gates for analysis 
     for( jang=0; jang<nangs; jang++ )if( selections[jang]==1 )fprintf(outf,"%d %d\n",jr,jang);
 
     
     for( jang=0; jang<nangs; jang++ )if( selections[jang]==1 ){       
 	glags=0;
-	/* for( jl=0; jl<nlags; jl++ )if(sigma_l[jl] != 0){ */
 	
 	for( jl=0; jl<nlags; jl++ ){
 	  if( (isgood(lags_v_ang[jl][jang].real) == 1) && (sigma_l[jl] <= 1.25*mean_sv) && ( sigma_l[jl] != 0)){
@@ -439,10 +509,10 @@ int main(int argc, char *argv[]){
 	    glags++;
 	  }
 	}
-	stat=estimate_amp(acf, sigma, lags, glags, &amp, &wid_l);
+	stat=estimate_amp(acf, sigma, lags, glags, &amp, &wid_l); // estimate amplitude and width
 	if( stat==-1 )continue;
-	stat=estimate_vel(acf,sigma,lags,glags,amp,wid_l,dstr.tfreq,dstr.mpinc,&vel,&err);
-	fprintf(out_v,"%d %d %lf %lf %lf %lf\n",jr,jang,(double)jang*DANG+ang_min,amp,3.e10/(wid_l*(double)dstr.tfreq*(double)dstr.mpinc),vel);
+	stat=estimate_vel(acf,sigma,lags,glags,amp,wid_l,dstr.tfreq,dstr.mpinc,&vel,&err); // estimate velocity
+	fprintf(out_v,"%d %d %lf %lf %lf %lf\n",jr,jang,(double)jang*DANG+ang_min,amp/noise_pwr,3.e10/(wid_l*(double)dstr.tfreq*(double)dstr.mpinc),vel);
       }
 
     fprintf(outx,"range=%d\n",jr);
