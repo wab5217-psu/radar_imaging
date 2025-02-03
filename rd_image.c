@@ -69,15 +69,12 @@ int rd_image(FILE *fp, char *radar, int not_beam, int stid, struct IMAGE_STR *ds
   
   if( not_beam )return(0);
   
-  double norm_v;
   double *mask;
   double samp_p_tau=(double)dstr->mpinc/(double)dstr->smsep;
   int s1;
   int sbuf;
   
   sbuf=3;
-
-  double nPow;
 
   fprintf(stderr,"nbaud: %d\n",dstr->nbaud);
 
@@ -88,52 +85,18 @@ int rd_image(FILE *fp, char *radar, int not_beam, int stid, struct IMAGE_STR *ds
     for( js=MAX(s1-2,0); js<MIN(s1+sbuf*dstr->nbaud,dstr->samples); js++ )mask[js]=0;
   }
   
-
-  double samp1,samp2;
-  int jsamp,nsamp=dstr->samples;  
-  int n_nsamp=15*dstr->nbaud;
-  int ncount;
-  double ant_nPow[N_ANT];
-  
   for( ja=0; ja<N_ANT; ja++ ){
-    ncount=0;
-    nPow=0;
-    for( js=0; js<dstr->sequences; js++ ){
-      for( jsamp=nsamp-n_nsamp; jsamp<nsamp; jsamp++){
-	samp1=(double)dstr->i_array[ja][js][jsamp];
-	samp2=(double)dstr->q_array[ja][js][jsamp];
-	if( isgood(samp1) && isgood(samp2)){
-	  nPow += samp1*samp1+samp2*samp2;
-	  ncount+=1;
-	}
-      }
-    }
-    ant_nPow[ja]=nPow/ncount;
-  }
-  
-  
-  for( ja=0; ja<N_ANT; ja++ ){
-    if( isgood(ant_nPow[ja])){norm_v=sqrt(ant_nPow[ja])/5;}else{norm_v=100000;}
-    fprintf(stderr,"normalizaiton %f\n",norm_v);
     for( js=0; js<dstr->sequences; js++ )for( j=0; j<dstr->samples; j++ ){
 	if( dstr->i_array[ja][js][j] == BAD_VALUE ) continue;
 	if( dstr->q_array[ja][js][j] == BAD_VALUE ) continue;
-	if( norm_v == 0 ){
-	  dstr->i_array[ja][js][j]=BAD_VALUE;
-	  dstr->q_array[ja][js][j]=BAD_VALUE;
-	  continue;
-	}
 	if( mask[j] == 0 ){
 	  dstr->i_array[ja][js][j]=BAD_VALUE;
 	  dstr->q_array[ja][js][j]=BAD_VALUE;
 	  continue;
 	}
-	dstr->i_array[ja][js][j]/=norm_v;
-	dstr->q_array[ja][js][j]/=norm_v;
-	/* fprintf(stderr,"rd_image [%d][%d][%d] i = %f  q = %f\n",ja,js,j,dstr->i_array[ja][js][j],dstr->q_array[ja][js][j]);  */
       }
   }
-
+  
   free(mask);
   return(0);
 }
